@@ -1,0 +1,149 @@
+# Si se añade un servicio de un contenedor que aún no se ha creado, porque no se ha construido a partir de una imagen definida según un Dockerfile, antes de poder correr el "docker compose up -d", hay que construir el contenedor:
+# > cd ruta_hasta_Dockerfile
+# > docker build . -t 'nombre_contenedor'
+# por ejemplo, el nombre_contenedor podría ser php_74_prueba
+#
+#CREO que si en lugar de utilizar 'context' se utilizase 'dockerfile: path/to/Dockerfile', no haría falta construir previamente el contenedor.
+# En ese caso, se definiría el contexto como 'context: .'
+
+version: '3.7'
+
+services:
+    prueba_php:
+        build:
+            context: dockerfile_php_74_prueba        
+        container_name: php_74_prueba
+#            context: dockerfile_php_81_prueba
+#        container_name: php_81_prueba
+        expose:
+          - 9000
+        networks:
+          - isolated-prueba
+        volumes:
+            - ./app:/var/www/html:rw
+            - ./php_prueba_config_4docker/:/usr/local/etc/php/conf.d/:rw
+        environment:
+          XDEBUG_MODE: debug
+          XDEBUG_CONFIG: client_host=prueba_docker.local client_port=9003
+
+    prueba_apache:
+        build:
+            context: dockerfile_apache_prueba
+        container_name: apache_prueba
+        networks:
+          - isolated-prueba        
+        expose:
+          - 80
+        depends_on:
+            - prueba_php
+        ports:
+          - "127.0.0.1:80:80"
+          - "127.0.0.1:443:443"
+        environment:
+          - VIRTUALHOST=prueba_docker.local
+        volumes:
+            - ./app:/var/www/html:rw
+            - ./apache_prueba_config_4docker/sites-enabled:/usr/local/apache2/sites-enabled:rw
+            - ./apache_prueba_config_4docker/conf/httpd.conf:/usr/local/apache2/conf/httpd.conf:rw
+
+    prueba_mysql:
+        build:
+#            context: dockerfile_mysql_57_prueba
+#        container_name: mysql_57_prueba
+            context: dockerfile_mysql_8_prueba
+        container_name: mysql_8_prueba
+        environment:
+            - MYSQL_ROOT_PASSWORD=XXXX
+            - MYSQL_DATABASE=XXXX
+            - MYSQL_USER=XXXX
+            - MYSQL_PASSWORD=XXXX
+        expose:
+            - 3306
+        ports:
+            - "127.0.0.1:3306:3306"
+        volumes:
+            - ./mysql_prueba_config_4docker/data:/var/lib/mysql
+            - ./mysql_prueba_config_4docker/mysqld.cnf:/etc/mysql/mysql.conf.d/mysqld.cnf:rw
+        networks:
+            - isolated-prueba
+
+    prueba_rabbitmq:
+#para entrar: localhost:15672 . Usuario y contraseña: guest
+        image: rabbitmq:3.9-management
+        container_name: rabbitmq_prueba
+        ports:
+            - 5672:5672
+            - 15672:15672
+        volumes:
+            - ./rabbitmq_prueba_config_4docker/data/:/var/lib/rabbitmq/
+# He tenido que hacer un sudo chown 999 rabbitmq_prueba_config_4docker/log para que deje de dar errores el inicio del rabbitmq
+            - ./rabbitmq_prueba_config_4docker/log/:/var/log/rabbitmq/
+        networks:
+            - isolated-prueba
+
+
+    prueba_zookeeper:
+        image: confluentinc/cp-zookeeper:7.3.2
+        container_name: zookeeper_prueba
+        environment:
+            ZOOKEEPER_CLIENT_PORT: 2181
+            ZOOKEEPER_TICK_TIME: 2000
+        networks:
+            - isolated-prueba
+
+    prueba_kafka:
+        image: confluentinc/cp-kafka:7.3.2
+        container_name: kafka_prueba
+        ports:
+            - "9092:9092"
+        depends_on:
+            - prueba_zookeeper
+        environment:
+            KAFKA_BROKER_ID: 1
+            KAFKA_ZOOKEEPER_CONNECT: 'prueba_zookeeper:2181'
+            KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+            KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://prueba_kafka:9092,PLAINTEXT_INTERNAL://prueba_kafka:29092
+            KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+            KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+            KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+            KAFKA_LOG_RETENTION_HOURS: 0
+            KAFKA_LOG_RETENTION_MINUTES: 10
+# The default value is 168 hours (seven days). 
+        networks:
+            - isolated-prueba
+# Para crear un topic en kafka:
+## docker exec kafka_prueba kafka-topics --bootstrap-server prueba_kafka:9092 --create --topic cualquiercosa
+# Para iniciar una consola interactiva para envío de mensajes (no se si lo utilizaré en el futuro):
+## docker exec --interactive --tty kafka_prueba kafka-console-producer --bootstrap-server prueba_kafka:9092 --topic cualquiercosa
+# Para lanzar un consumidor de mensajes:
+## docker exec --interactive --tty kafka_prueba kafka-console-consumer --bootstrap-server prueba_kafka:9092 --topic cualquiercosa --from-beginning
+
+
+    prueba_jenkins:
+        build:
+            context: dockerfile_jenkins_prueba
+        privileged: true
+        ports:
+            - 8080:8080
+            - 50000:50000
+        container_name: jenkins_prueba
+        volumes:
+            - ./jenkins_prueba_config_4docker:/var/jenkins_home
+            - /var/run/docker.sock:/var/run/docker.sock
+        networks:
+            - isolated-prueba
+# Para entrar en el jenkins:
+## localhost:8080
+# La contraseña de administrador se encuentra en:
+## /var/jenkins_home/secrets/initialAdminPassword
+## que se asigna automáticamente, y ha sido:
+## b7fb9749b1d148a49256647cc1887073
+# PERO después he configurado como usuario y contraseña:
+## usuario: jenkinsAdmin
+## contraseña: j3nk1nsAdm1n
+
+
+networks:
+    isolated-prueba:
+        driver: bridge
+

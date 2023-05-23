@@ -1,0 +1,17 @@
+old_sound_rabbit_mq:
+    connections:
+        default:
+            url: '%env(RABBITMQ_URL)%'
+    producers:
+        test_messages:
+            connection:       default
+            exchange_options: { name: 'test_messages', type: direct }
+            service_alias:  rabbit_mq_test_messages
+    consumers:
+        test_messages:
+            connection:       default
+            exchange_options: { name: 'test_messages', type: direct }
+            queue_options:    { name: 'test_messages'}
+            callback:         App\Infrastructure\Symfony\Consumer\NotificationConsumer
+            # El callback también puede ser el nombre de un servicio
+            # Para ejecutar el consumer, lanzar el comando: php bin/console rabbitmq:consumer -w test_messages

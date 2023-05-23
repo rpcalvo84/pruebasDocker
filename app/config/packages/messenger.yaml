@@ -1,0 +1,51 @@
+framework:
+    messenger:
+        failure_transport: failed
+
+        transports:
+            # https://symfony.com/doc/current/messenger.html#transport-configuration
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                options:
+                    use_notify: true
+                    check_delayed_interval: 60000
+                retry_strategy:
+                    max_retries: 3
+                    multiplier: 2
+            failed: 'doctrine://default?queue_name=failed'
+            # sync: 'sync://'
+
+            ### INICIO CONFIGURACION KAFKA ###
+            producer:
+                dsn: '%env(KAFKA_URL)%'
+                serializer: App\Infrastructure\Symfony\Messenger\KafkaSerializer
+                options:
+                    flushTimeout: 5000
+                    flushRetries: 5
+                    topic:
+                        name: 'cualquiercosa'
+            ## Para iniciar el consumidor de mensajes, que está configurado como consumidor del componente Messenger,
+            ## sólo hay que lanzar: php bin/console messenger:consume consumer
+            consumer:
+                dsn: '%env(KAFKA_URL)%'
+                serializer: App\Infrastructure\Symfony\Messenger\KafkaSerializer
+                options:
+                    commitAsync: true
+                    receiveTimeout: 10000
+                    topic:
+                        name: 'cualquiercosa'
+                    kafka_conf:
+                        enable.auto.offset.store: 'false'
+                        group.id: 'mi-id-unico-por-consumidor'
+                        max.poll.interval.ms: '45000'
+                    topic_conf:
+                        auto.offset.reset: 'earliest'
+            ### FIN CONFIGURACION KAFKA ###
+
+        routing:
+            Symfony\Component\Mailer\Messenger\SendEmailMessage: async
+            Symfony\Component\Notifier\Message\ChatMessage: async
+            Symfony\Component\Notifier\Message\SmsMessage: async
+
+            # Route your messages to the transports
+            App\Infrastructure\Domain\Model\EntidadPruebaMessageable: producer
